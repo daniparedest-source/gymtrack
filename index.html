@@ -548,6 +548,14 @@ function startWorkout(routineId){
 function renderWorkout(){
   if(!activeSession){document.getElementById('sc-workout').innerHTML='';return}
   const s=activeSession;
+
+  // build vol summary from routine exercises
+  const routineExForVol=s.exercises.map(ex=>({
+    pattern:ex.pattern,
+    sets:ex.sets.length
+  }));
+  const volPanel=renderVolPanel(routineExForVol);
+
   document.getElementById('sc-workout').innerHTML=`
     <div class="fade-up">
       <div class="session-bar">
@@ -558,6 +566,24 @@ function renderWorkout(){
         <div style="text-align:right">
           <div class="session-timer-val" id="session-elapsed">${fmtTimer(Date.now()-sessionStart)}</div>
           <div class="label">tiempo</div>
+        </div>
+      </div>
+
+      <!-- VOLUME SUMMARY TOGGLE -->
+      <div style="background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden">
+        <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer"
+          onclick="const b=document.getElementById('session-vol-body');const a=document.getElementById('session-vol-arr');b.style.display=b.style.display==='none'?'block':'none';a.textContent=b.style.display==='none'?'›':'⌄'">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:16px">📊</span>
+            <div>
+              <div class="label">Volumen de esta rutina</div>
+              <div class="caption">${Object.entries(calcRoutineVolume(routineExForVol)).filter(([,v])=>v>0).map(([m,v])=>`${m}: ${Math.round(v*10)/10}`).join(' · ')}</div>
+            </div>
+          </div>
+          <span id="session-vol-arr" style="color:var(--accent);font-size:18px">›</span>
+        </div>
+        <div id="session-vol-body" style="display:none;padding:0 16px 14px;border-top:1px solid var(--border)">
+          <div style="margin-top:10px">${volPanel}</div>
         </div>
       </div>
 
@@ -1154,9 +1180,56 @@ function editRoutine(id){
   openModal(`✏️ ${r.name}`,builderHTML(r));
 }
 
+function calcRoutineVolume(exercises){
+  const muscleVol={};
+  exercises.forEach(ex=>{
+    const frac=FRACTIONAL[ex.pattern];
+    if(!frac)return;
+    Object.entries(frac).forEach(([muscle,mult])=>{
+      muscleVol[muscle]=(muscleVol[muscle]||0)+(ex.sets*mult);
+    });
+  });
+  return muscleVol;
+}
+
+function volBadge(val,row){
+  if(!row||!row.maxAdaptive)return{cls:'',lbl:'—',color:'var(--muted)'};
+  const maint=parseRange(row.maintenance);
+  const min=parseRange(row.minEffective);
+  const adapt=parseRange(row.maxAdaptive);
+  const max=parseRange(row.maxRecoverable);
+  if(max&&val>=max[0])return{cls:'badge-max',lbl:'Máx Rec',color:'var(--danger)'};
+  if(adapt&&val>=adapt[0])return{cls:'badge-adapt',lbl:'Adaptativo',color:'var(--warn)'};
+  if(min&&val>=min[0])return{cls:'badge-min',lbl:'Efectivo',color:'var(--ok)'};
+  if(maint&&val>=maint[0])return{cls:'badge-maint',lbl:'Mantenim',color:'#60a5fa'};
+  return{cls:'',lbl:'Bajo',color:'var(--muted)'};
+}
+
+function renderVolPanel(exercises){
+  const vol=calcRoutineVolume(exercises);
+  const entries=Object.entries(vol).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  if(!entries.length)return`<div class="caption" style="color:var(--muted);text-align:center;padding:8px 0">Agrega ejercicios para ver el volumen</div>`;
+  return entries.map(([muscle,val])=>{
+    const rounded=Math.round(val*10)/10;
+    const row=DB_VOLUME.find(v=>v.muscle===muscle);
+    const {cls,lbl,color}=volBadge(val,row);
+    const adapt=row?parseRange(row.maxAdaptive):null;
+    const pct=adapt?Math.min(100,(val/adapt[1])*100):0;
+    return`
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:600;width:110px;flex-shrink:0">${muscle}</div>
+        <div style="flex:1;height:5px;background:var(--s3);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .4s"></div>
+        </div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:${color};width:28px;text-align:right">${rounded}</div>
+        <span class="week-calc-badge ${cls}" style="width:70px;text-align:center">${lbl}</span>
+      </div>
+    `;
+  }).join('');
+}
+
 function builderHTML(r){
   const allEx=getAllExercises();
-  const patterns=[...new Set(allEx.map(e=>e.pattern))].sort();
   return `
     <div style="display:flex;flex-direction:column;gap:10px">
       <div><div class="label" style="margin-bottom:4px">Nombre de la rutina</div>
@@ -1165,6 +1238,18 @@ function builderHTML(r){
         <input class="input" id="b-sub" value="${r.subtitle}" oninput="builderUpdate('subtitle',this.value)"/></div>
 
       <div class="divider"></div>
+
+      <!-- VOLUME PANEL -->
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px">
+        <div class="row-sb" style="margin-bottom:10px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.vpArr').textContent=this.nextElementSibling.style.display==='none'?'›':'⌄'">
+          <div class="label">📊 Volumen por músculo (esta rutina)</div>
+          <span class="vpArr" style="color:var(--accent);font-size:16px">⌄</span>
+        </div>
+        <div id="builder-vol-panel">
+          ${renderVolPanel(r.exercises)}
+        </div>
+      </div>
+
       <div class="label">Ejercicios (${r.exercises.length})</div>
 
       ${r.exercises.map((ex,ei)=>`
@@ -1175,7 +1260,7 @@ function builderHTML(r){
             <div class="builder-ex-meta">${ex.pattern}</div>
             <div class="builder-ex-controls">
               <span class="caption">Series:</span>
-              <input type="number" value="${ex.sets}" min="1" max="9" onchange="builderSetEx(${ei},'sets',parseInt(this.value))"/>
+              <input type="number" value="${ex.sets}" min="1" max="9" onchange="builderSetExLive(${ei},'sets',parseInt(this.value))"/>
               <span class="caption">Reps:</span>
               <input type="text" value="${ex.reps}" style="width:70px" onchange="builderSetEx(${ei},'reps',this.value)"/>
               <span class="caption">Desc:</span>
@@ -1206,6 +1291,18 @@ function builderSetEx(ei,field,val){
   const routines=getRoutines();
   const r=routines.find(x=>x.id===builderRoutineId);
   if(r&&r.exercises[ei]){r.exercises[ei][field]=val;saveRoutines(routines);}
+}
+
+function builderSetExLive(ei,field,val){
+  const routines=getRoutines();
+  const r=routines.find(x=>x.id===builderRoutineId);
+  if(r&&r.exercises[ei]){
+    r.exercises[ei][field]=val;
+    saveRoutines(routines);
+    // update vol panel in place without full re-render
+    const panel=document.getElementById('builder-vol-panel');
+    if(panel)panel.innerHTML=renderVolPanel(r.exercises);
+  }
 }
 
 function builderRemoveEx(ei){
