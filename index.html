@@ -443,16 +443,19 @@ function renderHome(){
 
       <div class="section">
         <div class="section-head"><div class="label">Mis Rutinas</div><button class="btn btn-ghost btn-sm" onclick="nav('routines')">Ver todas</button></div>
-        ${routines.slice(0,3).map(r=>`
-          <div class="routine-card ${r.id}" onclick="startWorkout('${r.id}')">
-            <div class="routine-card-label">${r.name}</div>
+        ${routines.slice(0,3).map((r,i)=>{
+          const PALETTE=['#c8f135','#ff6b35','#818cf8','#34d399','#f59e0b','#60a5fa','#f472b6','#a78bfa','#fb923c','#22d3ee','#4ade80','#e879f9','#facc15','#f87171','#a3e635','#ffffff'];
+          const color=r.color||PALETTE[i%PALETTE.length];
+          return`
+          <div class="routine-card" style="border-left:3px solid ${color}" onclick="startWorkout('${r.id}')">
+            <div class="routine-card-label" style="color:${color}">${r.name}</div>
             <div class="routine-card-name">${r.subtitle}</div>
             <div class="routine-card-meta">
               <span class="tag">${r.exercises.length} ejercicios</span>
               <span class="tag">${r.exercises.reduce((a,e)=>a+e.sets,0)} series</span>
             </div>
-          </div>
-        `).join('')}
+          </div>`;
+        }).join('')}
       </div>
 
       ${last?`
@@ -481,26 +484,29 @@ function renderHome(){
 // ═══════════════════════════════════════════
 function renderRoutines(){
   const routines=getRoutines();
+  const PALETTE=['#c8f135','#ff6b35','#818cf8','#34d399','#f59e0b','#60a5fa','#f472b6','#a78bfa','#fb923c','#22d3ee','#4ade80','#e879f9','#facc15','#f87171','#a3e635','#ffffff'];
   document.getElementById('sc-routines').innerHTML=`
     <div class="fade-up">
       <div style="margin-bottom:20px">
         <div class="h1">RU<span>TINAS</span></div>
         <div class="caption" style="margin-top:4px">${routines.length} rutinas · toca para iniciar o editar</div>
       </div>
-      ${routines.map(r=>`
-        <div class="routine-card ${r.id||'custom'}">
-          <div class="routine-card-label">${r.name}</div>
+      ${routines.map((r,i)=>{
+        const color=r.color||PALETTE[i%PALETTE.length];
+        return`
+        <div class="routine-card" style="border-left:3px solid ${color}">
+          <div class="routine-card-label" style="color:${color}">${r.name}</div>
           <div class="routine-card-name">${r.subtitle}</div>
           <div class="routine-card-meta">
             ${r.exercises.map(e=>`<span class="tag">${e.name.split(' ').slice(0,2).join(' ')}</span>`).join('')}
           </div>
           <div class="routine-card-actions">
-            <button class="btn btn-primary btn-sm" style="flex:2" onclick="startWorkout('${r.id}')">▶ Iniciar</button>
+            <button class="btn btn-primary btn-sm" style="flex:2;background:${color};color:#0d0d0d" onclick="startWorkout('${r.id}')">▶ Iniciar</button>
             <button class="btn btn-ghost btn-sm" style="flex:1" onclick="editRoutine('${r.id}')">✏️ Editar</button>
             <button class="btn btn-ghost btn-sm" onclick="showWeekCalc('${r.id}')">📊</button>
           </div>
-        </div>
-      `).join('')}
+        </div>`;
+      }).join('')}
       <button class="btn btn-ghost" style="margin-top:8px" onclick="newRoutine()">＋ Nueva rutina</button>
     </div>
   `;
@@ -739,7 +745,7 @@ function renderHistory(){
   // Build dynamic color palette for routines
   const PALETTE=['#c8f135','#ff6b35','#818cf8','#34d399','#f59e0b','#60a5fa','#f472b6','#a78bfa','#fb923c','#22d3ee','#4ade80','#e879f9','#facc15','#38bdf8','#f87171','#a3e635'];
   const routineColors={};
-  routines.forEach((r,i)=>{routineColors[r.id]=PALETTE[i%PALETTE.length]});
+  routines.forEach((r,i)=>{routineColors[r.id]=r.color||PALETTE[i%PALETTE.length]});
 
   const y=calYear,m=calMonth;
   const monthNames=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -1330,13 +1336,37 @@ function renderVolPanel(exercises){
 }
 
 function builderHTML(r){
-  const allEx=getAllExercises();
+  const SWATCHES=['#c8f135','#ff6b35','#818cf8','#34d399','#f59e0b','#60a5fa','#f472b6','#a78bfa','#fb923c','#22d3ee','#4ade80','#e879f9','#facc15','#f87171','#a3e635','#ffffff'];
+  const currentColor=r.color||SWATCHES[0];
   return `
     <div style="display:flex;flex-direction:column;gap:10px">
+
+      <!-- NAME + DESCRIPTION -->
       <div><div class="label" style="margin-bottom:4px">Nombre de la rutina</div>
         <input class="input" id="b-name" value="${r.name}" oninput="builderUpdate('name',this.value)"/></div>
       <div><div class="label" style="margin-bottom:4px">Descripción</div>
         <input class="input" id="b-sub" value="${r.subtitle}" oninput="builderUpdate('subtitle',this.value)"/></div>
+
+      <!-- COLOR PICKER -->
+      <div>
+        <div class="label" style="margin-bottom:8px">Color de la rutina</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${SWATCHES.map(c=>`
+            <div onclick="builderSetColor('${c}')"
+              style="width:32px;height:32px;border-radius:50%;background:${c};cursor:pointer;
+                border:3px solid ${c===currentColor?'#fff':'transparent'};
+                box-shadow:${c===currentColor?'0 0 0 2px '+c:'none'};
+                transition:all .15s;flex-shrink:0"
+              id="swatch-${c.replace('#','')}">
+            </div>
+          `).join('')}
+        </div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <span class="caption">O elige un color personalizado:</span>
+          <input type="color" value="${currentColor}" style="width:36px;height:36px;border:none;background:none;cursor:pointer;border-radius:50%;padding:0"
+            onchange="builderSetColor(this.value)"/>
+        </div>
+      </div>
 
       <div class="divider"></div>
 
@@ -1346,35 +1376,14 @@ function builderHTML(r){
           <div class="label">📊 Volumen por músculo (esta rutina)</div>
           <span class="vpArr" style="color:var(--accent);font-size:16px">⌄</span>
         </div>
-        <div id="builder-vol-panel">
-          ${renderVolPanel(r.exercises)}
-        </div>
+        <div id="builder-vol-panel">${renderVolPanel(r.exercises)}</div>
       </div>
 
-      <div class="label">Ejercicios (${r.exercises.length})</div>
-
-      ${r.exercises.map((ex,ei)=>`
-        <div class="builder-ex">
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--muted);width:28px;flex-shrink:0">${ei+1}</div>
-          <div class="builder-ex-body">
-            <div class="builder-ex-name">${ex.name}</div>
-            <div class="builder-ex-meta">${ex.pattern}</div>
-            <div class="builder-ex-controls">
-              <span class="caption">Series:</span>
-              <input type="number" value="${ex.sets}" min="1" max="9" onchange="builderSetExLive(${ei},'sets',parseInt(this.value)||1)"/>
-              <span class="caption">Reps:</span>
-              <input type="text" value="${ex.reps||'10-12'}" style="width:70px" onchange="builderSetEx(${ei},'reps',this.value)"/>
-            </div>
-            <div class="builder-ex-controls" style="margin-top:6px">
-              <span class="caption">Descanso:</span>
-              <input type="text" value="${fmtRest(ex.rest||90)}" style="width:80px" placeholder="ej: 1min30s" onchange="builderSetEx(${ei},'rest',parseRest(this.value))" onblur="this.value=fmtRest(parseRest(this.value))"/>
-              <span class="caption">RIR:</span>
-              <input type="text" value="${ex.rir||''}" style="width:80px" placeholder="ej: RIR 1-2" onchange="builderSetEx(${ei},'rir',this.value)"/>
-            </div>
-          </div>
-          <button class="btn-icon" onclick="builderRemoveEx(${ei})">✕</button>
-        </div>
-      `).join('')}
+      <!-- EXERCISES -->
+      <div class="label">Ejercicios (${r.exercises.length}) — mantén ☰ para reordenar</div>
+      <div id="builder-ex-list">
+        ${r.exercises.map((ex,ei)=>builderExHTML(ex,ei)).join('')}
+      </div>
 
       <button class="btn btn-ghost" onclick="builderAddEx()">＋ Agregar ejercicio</button>
 
@@ -1383,6 +1392,139 @@ function builderHTML(r){
       <button class="btn btn-danger" onclick="deleteRoutine('${r.id}')">Eliminar rutina</button>
     </div>
   `;
+}
+
+function builderExHTML(ex,ei){
+  return `
+    <div class="builder-ex" id="bex-${ei}" draggable="true"
+      ondragstart="dragStart(event,${ei})"
+      ondragover="dragOver(event)"
+      ondrop="dragDrop(event,${ei})"
+      ondragend="dragEnd(event)">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:grab;padding:4px 2px;color:var(--muted);touch-action:none"
+        onpointerdown="initTouchDrag(event,${ei})">
+        <span style="font-size:18px;line-height:1">☰</span>
+      </div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--muted);width:24px;flex-shrink:0;text-align:center">${ei+1}</div>
+      <div class="builder-ex-body">
+        <div class="builder-ex-name">${ex.name}</div>
+        <div class="builder-ex-meta">${ex.pattern}</div>
+        <div class="builder-ex-controls">
+          <span class="caption">Series:</span>
+          <input type="number" value="${ex.sets}" min="1" max="9" onchange="builderSetExLive(${ei},'sets',parseInt(this.value)||1)"/>
+          <span class="caption">Reps:</span>
+          <input type="text" value="${ex.reps||'10-12'}" style="width:70px" onchange="builderSetEx(${ei},'reps',this.value)"/>
+        </div>
+        <div class="builder-ex-controls" style="margin-top:6px">
+          <span class="caption">Descanso:</span>
+          <input type="text" value="${fmtRest(ex.rest||90)}" style="width:80px" placeholder="ej: 1min30s"
+            onchange="builderSetEx(${ei},'rest',parseRest(this.value))"
+            onblur="this.value=fmtRest(parseRest(this.value))"/>
+          <span class="caption">RIR:</span>
+          <input type="text" value="${ex.rir||''}" style="width:80px" placeholder="ej: RIR 1-2"
+            onchange="builderSetEx(${ei},'rir',this.value)"/>
+        </div>
+      </div>
+      <button class="btn-icon" onclick="builderRemoveEx(${ei})">✕</button>
+    </div>
+  `;
+}
+
+function builderSetColor(color){
+  const routines=getRoutines();
+  const r=routines.find(x=>x.id===builderRoutineId);
+  if(!r)return;
+  r.color=color;
+  saveRoutines(routines);
+  // update swatches visually without full re-render
+  document.querySelectorAll('[id^="swatch-"]').forEach(el=>{
+    const c='#'+el.id.replace('swatch-','');
+    el.style.border=`3px solid ${c===color?'#fff':'transparent'}`;
+    el.style.boxShadow=c===color?`0 0 0 2px ${c}`:'none';
+  });
+}
+
+// ── DRAG TO REORDER ──
+let _dragSrcIdx=null;
+let _touchDragIdx=null;
+let _touchClone=null;
+
+function dragStart(e,idx){
+  _dragSrcIdx=idx;
+  e.currentTarget.style.opacity='0.4';
+  e.dataTransfer.effectAllowed='move';
+}
+function dragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+}
+function dragDrop(e,idx){
+  e.preventDefault();
+  if(_dragSrcIdx===null||_dragSrcIdx===idx)return;
+  builderMoveEx(_dragSrcIdx,idx);
+  _dragSrcIdx=null;
+}
+function dragEnd(e){
+  e.currentTarget.style.opacity='1';
+  _dragSrcIdx=null;
+}
+
+function initTouchDrag(e,idx){
+  // Touch drag for mobile
+  e.preventDefault();
+  _touchDragIdx=idx;
+  const el=document.getElementById(`bex-${idx}`);
+  const rect=el.getBoundingClientRect();
+  _touchClone=el.cloneNode(true);
+  _touchClone.style.cssText=`position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;opacity:0.85;z-index:9999;pointer-events:none;background:var(--s2);border-radius:var(--r);border:1px solid var(--accent)`;
+  document.body.appendChild(_touchClone);
+  el.style.opacity='0.3';
+
+  const onMove=ev=>{
+    const t=ev.touches[0];
+    _touchClone.style.top=(t.clientY-rect.height/2)+'px';
+    _touchClone.style.left=rect.left+'px';
+    // find target
+    document.querySelectorAll('[id^="bex-"]').forEach(target=>{
+      target.style.borderTop='';
+      target.style.borderBottom='';
+    });
+    const targetEl=document.elementFromPoint(t.clientX,t.clientY)?.closest('[id^="bex-"]');
+    if(targetEl&&targetEl!==el){
+      const tIdx=parseInt(targetEl.id.replace('bex-',''));
+      if(tIdx>idx) targetEl.style.borderBottom='2px solid var(--accent)';
+      else targetEl.style.borderTop='2px solid var(--accent)';
+    }
+  };
+  const onEnd=ev=>{
+    document.removeEventListener('touchmove',onMove);
+    document.removeEventListener('touchend',onEnd);
+    if(_touchClone){_touchClone.remove();_touchClone=null;}
+    document.querySelectorAll('[id^="bex-"]').forEach(t=>{t.style.borderTop='';t.style.borderBottom='';t.style.opacity='';});
+    const t=ev.changedTouches[0];
+    const targetEl=document.elementFromPoint(t.clientX,t.clientY)?.closest('[id^="bex-"]');
+    if(targetEl){
+      const tIdx=parseInt(targetEl.id.replace('bex-',''));
+      if(tIdx!==idx) builderMoveEx(idx,tIdx);
+    }
+    _touchDragIdx=null;
+  };
+  document.addEventListener('touchmove',onMove,{passive:false});
+  document.addEventListener('touchend',onEnd);
+}
+
+function builderMoveEx(fromIdx,toIdx){
+  const routines=getRoutines();
+  const r=routines.find(x=>x.id===builderRoutineId);
+  if(!r)return;
+  const item=r.exercises.splice(fromIdx,1)[0];
+  r.exercises.splice(toIdx,0,item);
+  saveRoutines(routines);
+  // re-render just the list
+  const list=document.getElementById('builder-ex-list');
+  if(list) list.innerHTML=r.exercises.map((ex,ei)=>builderExHTML(ex,ei)).join('');
+  const panel=document.getElementById('builder-vol-panel');
+  if(panel) panel.innerHTML=renderVolPanel(r.exercises);
 }
 
 function builderUpdate(field,val){
