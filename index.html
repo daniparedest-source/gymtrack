@@ -148,11 +148,7 @@ select.input{-webkit-appearance:none}
 .cal-day.other{color:var(--muted)}
 .cal-day.today{color:var(--accent);font-weight:700}
 .cal-day.trained{background:var(--s2);border:1px solid var(--border)}
-.cal-day.trained::after{content:'';position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%}
-.cal-day.trained.A::after{background:var(--accent)}
-.cal-day.trained.B::after{background:var(--accent2)}
-.cal-day.trained.INF::after{background:var(--accent3)}
-.cal-day.trained.multi::after{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.cal-day.trained::after{content:'';position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--dot-color,var(--accent))}
 .cal-legend{display:flex;gap:12px;justify-content:center;margin-top:12px}
 .cal-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim)}
 .cal-legend-dot{width:8px;height:8px;border-radius:50%}
@@ -385,7 +381,7 @@ let calMonth=new Date().getMonth();
 let calYear=new Date().getFullYear();
 let libFilter='all';
 let libSearch='';
-let refTab='recom';
+let refTab='vol_sem';
 let progExId=null;
 let builderRoutineId=null;
 
@@ -735,10 +731,14 @@ function skipRest(){
 // ═══════════════════════════════════════════
 function renderHistory(){
   const sessions=getSessions();
-  const now=new Date();
+  const routines=getRoutines();
   const el=document.getElementById('sc-history');
 
-  // Calendar section
+  // Build dynamic color palette for routines
+  const PALETTE=['#c8f135','#ff6b35','#818cf8','#34d399','#f59e0b','#60a5fa','#f472b6','#a78bfa'];
+  const routineColors={};
+  routines.forEach((r,i)=>{routineColors[r.id]=PALETTE[i%PALETTE.length]});
+
   const y=calYear,m=calMonth;
   const monthNames=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const first=new Date(y,m,1).getDay();
@@ -761,9 +761,21 @@ function renderHistory(){
     const rids=dayMap[d]||[];
     const trained=rids.length>0;
     const multi=rids.length>1;
-    const rid=rids[0]||'';
-    calCells+=`<div class="cal-day${isToday?' today':''}${trained?' trained':''}${trained?(multi?' multi':' '+rid):''}">${d}</div>`;
+    const color=trained?(routineColors[rids[0]]||'#c8f135'):'';
+    const dotStyle=trained?`style="--dot-color:${multi?'linear-gradient(90deg,'+PALETTE[0]+','+PALETTE[1]+')':color}"`:'' ;
+    calCells+=`
+      <div class="cal-day${isToday?' today':''}${trained?' trained':''}" ${dotStyle}>
+        ${d}
+      </div>`;
   }
+
+  // dynamic legend
+  const legendHTML=routines.map((r,i)=>`
+    <div class="cal-legend-item">
+      <div class="cal-legend-dot" style="background:${PALETTE[i%PALETTE.length]}"></div>
+      ${r.name}
+    </div>
+  `).join('');
 
   // Session list
   let histHTML='';
@@ -812,10 +824,8 @@ function renderHistory(){
           ${['D','L','M','M','J','V','S'].map(d=>`<div class="cal-day-head">${d}</div>`).join('')}
           ${calCells}
         </div>
-        <div class="cal-legend">
-          <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--accent)"></div>Rutina A</div>
-          <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--accent2)"></div>Rutina B</div>
-          <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--accent3)"></div>Inferior</div>
+        <div class="cal-legend" style="flex-wrap:wrap">
+          ${legendHTML}
         </div>
       </div>
 
@@ -948,9 +958,10 @@ function renderReference(){
     <div class="fade-up">
       <div style="margin-bottom:16px"><div class="h1">REFE<span>RENCIA</span></div></div>
       <div class="pill-scroll" style="margin-bottom:16px">
+        <div class="pill ${refTab==='vol_sem'?'on':''}" onclick="refTab='vol_sem';renderReference()">📊 Volumen Semanal</div>
         <div class="pill ${refTab==='recom'?'on':''}" onclick="refTab='recom';renderReference()">Recomendaciones</div>
-        <div class="pill ${refTab==='gm'?'on':''}" onclick="refTab='gm';renderReference()">Por Músculo (GM)</div>
-        <div class="pill ${refTab==='pm'?'on':''}" onclick="refTab='pm';renderReference()">Por Patrón (PM)</div>
+        <div class="pill ${refTab==='gm'?'on':''}" onclick="refTab='gm';renderReference()">Por Músculo</div>
+        <div class="pill ${refTab==='pm'?'on':''}" onclick="refTab='pm';renderReference()">Por Patrón</div>
         <div class="pill ${refTab==='vol'?'on':''}" onclick="refTab='vol';renderReference()">Tabla de Volumen</div>
       </div>
       <div id="ref-content">${renderRefContent()}</div>
@@ -959,11 +970,99 @@ function renderReference(){
 }
 
 function renderRefContent(){
+  if(refTab==='vol_sem') return renderWeeklyVolSection();
   if(refTab==='recom') return renderRecom();
   if(refTab==='gm') return renderByMuscle();
   if(refTab==='pm') return renderByPattern();
   if(refTab==='vol') return renderVolumeTable();
   return '';
+}
+
+function renderWeeklyVolSection(){
+  const routines=getRoutines();
+  if(!routines.length) return `<div class="empty"><div class="ico">📋</div><p>No hay rutinas creadas aún.</p></div>`;
+
+  // calc total weekly vol across ALL routines
+  const muscleVol={};
+  routines.forEach(r=>{
+    r.exercises.forEach(ex=>{
+      const frac=FRACTIONAL[ex.pattern];
+      if(!frac)return;
+      Object.entries(frac).forEach(([muscle,mult])=>{
+        muscleVol[muscle]=(muscleVol[muscle]||0)+(ex.sets*mult);
+      });
+    });
+  });
+
+  // sort by volume descending
+  const sorted=Object.entries(muscleVol)
+    .map(([muscle,val])=>({muscle,val:Math.round(val*10)/10}))
+    .sort((a,b)=>b.val-a.val);
+
+  const maxVal=sorted[0]?.val||1;
+
+  // per-routine breakdown
+  const routineBreakdowns=routines.map(r=>{
+    const rv={};
+    r.exercises.forEach(ex=>{
+      const frac=FRACTIONAL[ex.pattern];
+      if(!frac)return;
+      Object.entries(frac).forEach(([muscle,mult])=>{
+        rv[muscle]=(rv[muscle]||0)+(ex.sets*mult);
+      });
+    });
+    return{name:r.name,vol:rv};
+  });
+
+  return`
+    <div style="margin-bottom:12px">
+      <div class="caption">Volumen total de todas tus rutinas activas, ordenado de mayor a menor.</div>
+    </div>
+
+    ${sorted.map(({muscle,val})=>{
+      const row=DB_VOLUME.find(v=>v.muscle===muscle);
+      const {cls,lbl,color}=volBadge(val,row);
+      const pct=Math.round((val/maxVal)*100);
+      const maint=row?row.maintenance:'—';
+      const min=row?row.minEffective:'—';
+      const adapt=row?row.maxAdaptive:'—';
+
+      // per-routine contribution
+      const contributions=routineBreakdowns
+        .filter(rb=>rb.vol[muscle]>0)
+        .map(rb=>`<span class="tag" style="font-size:10px">${rb.name}: ${Math.round(rb.vol[muscle]*10)/10}</span>`)
+        .join('');
+
+      return`
+        <div class="card" style="margin-bottom:8px;padding:14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <div style="font-weight:600;font-size:14px;flex:1">${muscle}</div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:${color};line-height:1">${val}</div>
+            <span class="week-calc-badge ${cls}" style="min-width:68px;text-align:center">${lbl||'Sin vol'}</span>
+          </div>
+          <div style="height:6px;background:var(--s3);border-radius:3px;margin-bottom:8px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .4s"></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+            <span class="tag" style="font-size:10px">Mantenim: ${maint}</span>
+            <span class="tag" style="font-size:10px">MEV: ${min}</span>
+            <span class="tag" style="font-size:10px">MÁX adapt: ${adapt}</span>
+          </div>
+          ${contributions?`<div style="display:flex;gap:4px;flex-wrap:wrap">${contributions}</div>`:''}
+        </div>
+      `;
+    }).join('')}
+
+    <div class="card-sm" style="margin-top:4px">
+      <div class="label" style="margin-bottom:6px">Leyenda de zonas</div>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+        <div><span class="week-calc-badge badge-maint">Mantenim</span> <span class="text-dim">— Conservas el músculo</span></div>
+        <div><span class="week-calc-badge badge-min">Efectivo</span> <span class="text-dim">— Mínimo para crecer</span></div>
+        <div><span class="week-calc-badge badge-adapt">Adaptativo</span> <span class="text-dim">— Zona óptima de crecimiento</span></div>
+        <div><span class="week-calc-badge badge-max">Máx Rec</span> <span class="text-dim">— Límite de recuperación</span></div>
+      </div>
+    </div>
+  `;
 }
 
 function renderRecom(){
@@ -1313,14 +1412,16 @@ function builderRemoveEx(ei){
 
 // Store picker list in memory to avoid re-escaping issues
 let _pickerList=[];
+let _pickerCurrentMuscle='';
 
 function builderAddEx(){
   _pickerList=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
+  _pickerCurrentMuscle='';
   const muscles=[...new Set(_pickerList.flatMap(e=>e.muscles))].sort();
   openModal('Seleccionar ejercicio',`
     <div class="search-wrap" style="margin-bottom:8px">
       <span class="search-icon">🔍</span>
-      <input class="input" id="picker-search" placeholder="Buscar..." oninput="filterPicker(this.value)"/>
+      <input class="input" id="picker-search" placeholder="Buscar..." oninput="filterPicker()"/>
     </div>
     <div class="pill-scroll" id="picker-pills">
       <div class="pill on" onclick="filterPicker('')">Todos</div>
@@ -1355,15 +1456,18 @@ function pickExByIdx(i){
 }
 
 function filterPicker(val){
-  _pickerList=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
+  // use stored _pickerList, don't reset it
   const search=document.getElementById('picker-search')?.value.toLowerCase()||'';
-  const muscle=val&&val!=='Todos'?val:'';
-  const filtered=_pickerList.filter((e,i)=>{
-    const matchM=!muscle||e.muscles.includes(muscle);
+  const muscle=val!==undefined?(val&&val!=='Todos'?val:''):null;
+  // if val is undefined, it was called from the search input — preserve current muscle filter
+  const currentMuscle=muscle!==null?muscle:(_pickerCurrentMuscle||'');
+  if(muscle!==null)_pickerCurrentMuscle=currentMuscle;
+
+  const filtered=_pickerList.filter(e=>{
+    const matchM=!currentMuscle||e.muscles.includes(currentMuscle);
     const matchS=!search||e.name.toLowerCase().includes(search);
     return matchM&&matchS;
   });
-  // remap indices to original _pickerList
   const list=document.getElementById('picker-list');
   if(!list)return;
   list.innerHTML=filtered.map(ex=>{
@@ -1378,9 +1482,11 @@ function filterPicker(val){
       </div>
     `;
   }).join('');
-  document.querySelectorAll('#picker-pills .pill').forEach(p=>{
-    p.classList.toggle('on',p.textContent.trim()===(val||'Todos'));
-  });
+  if(muscle!==null){
+    document.querySelectorAll('#picker-pills .pill').forEach(p=>{
+      p.classList.toggle('on',p.textContent.trim()===(currentMuscle||'Todos'));
+    });
+  }
 }
 
 function saveBuilder(){
