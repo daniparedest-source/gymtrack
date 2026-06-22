@@ -997,7 +997,7 @@ function renderWeeklyVolSection(){
       const frac=FRACTIONAL[ex.pattern];
       if(!frac)return;
       Object.entries(frac).forEach(([muscle,mult])=>{
-        muscleVol[muscle]=(muscleVol[muscle]||0)+(ex.sets*mult);
+        muscleVol[muscle]=(muscleVol[muscle]||0)+((Array.isArray(ex.sets)?ex.sets.length:(parseInt(ex.sets)||0))*mult);
       });
     });
   });
@@ -1016,7 +1016,7 @@ function renderWeeklyVolSection(){
       const frac=FRACTIONAL[ex.pattern];
       if(!frac)return;
       Object.entries(frac).forEach(([muscle,mult])=>{
-        rv[muscle]=(rv[muscle]||0)+(ex.sets*mult);
+        rv[muscle]=(rv[muscle]||0)+((Array.isArray(ex.sets)?ex.sets.length:(parseInt(ex.sets)||0))*mult);
       });
     });
     return{name:r.name,vol:rv};
@@ -1214,7 +1214,7 @@ function showWeekCalc(routineId){
       const fracEntry=FRACTIONAL[ex.pattern];
       if(!fracEntry)return;
       Object.entries(fracEntry).forEach(([muscle,mult])=>{
-        muscleVol[muscle]=(muscleVol[muscle]||0)+(ex.sets*mult);
+        muscleVol[muscle]=(muscleVol[muscle]||0)+((Array.isArray(ex.sets)?ex.sets.length:(parseInt(ex.sets)||0))*mult);
       });
     });
   });
@@ -1292,8 +1292,9 @@ function calcRoutineVolume(exercises){
   exercises.forEach(ex=>{
     const frac=FRACTIONAL[ex.pattern];
     if(!frac)return;
+    const numSets=Array.isArray(ex.sets)?ex.sets.length:(parseInt(ex.sets)||0);
     Object.entries(frac).forEach(([muscle,mult])=>{
-      muscleVol[muscle]=(muscleVol[muscle]||0)+(ex.sets*mult);
+      muscleVol[muscle]=(muscleVol[muscle]||0)+(numSets*mult);
     });
   });
   return muscleVol;
