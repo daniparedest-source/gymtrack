@@ -1276,7 +1276,7 @@ function builderHTML(r){
 
       <div class="divider"></div>
       <button class="btn btn-primary" onclick="saveBuilder()">💾 Guardar rutina</button>
-      ${!['A','B','INF'].includes(r.id)?`<button class="btn btn-danger" onclick="deleteRoutine('${r.id}')">Eliminar rutina</button>`:''}
+      <button class="btn btn-danger" onclick="deleteRoutine('${r.id}')">Eliminar rutina</button>
     </div>
   `;
 }
@@ -1311,11 +1311,12 @@ function builderRemoveEx(ei){
   if(r){r.exercises.splice(ei,1);saveRoutines(routines);editRoutine(builderRoutineId);}
 }
 
+// Store picker list in memory to avoid re-escaping issues
+let _pickerList=[];
+
 function builderAddEx(){
-  // Show exercise picker
-  const all=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
-  const muscles=[...new Set(all.flatMap(e=>e.muscles))].sort();
-  let pickFilter='';
+  _pickerList=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
+  const muscles=[...new Set(_pickerList.flatMap(e=>e.muscles))].sort();
   openModal('Seleccionar ejercicio',`
     <div class="search-wrap" style="margin-bottom:8px">
       <span class="search-icon">🔍</span>
@@ -1326,8 +1327,8 @@ function builderAddEx(){
       ${muscles.map(m=>`<div class="pill" onclick="filterPicker('${m}')">${m}</div>`).join('')}
     </div>
     <div id="picker-list" style="max-height:50vh;overflow-y:auto">
-      ${all.map(ex=>`
-        <div class="ex-item" style="cursor:pointer" onclick="pickEx('${ex.name.replace(/'/g,"\\'")}','${ex.pattern}',${JSON.stringify(ex.muscles)})">
+      ${_pickerList.map((ex,i)=>`
+        <div class="ex-item" style="cursor:pointer" onclick="pickExByIdx(${i})">
           <div class="ex-item-body">
             <div class="ex-item-name">${ex.name}</div>
             <div class="ex-item-sub">${ex.muscles.join(', ')} · ${ex.pattern}</div>
@@ -1339,42 +1340,47 @@ function builderAddEx(){
   `);
 }
 
-function filterPicker(val){
-  const all=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
-  const list=document.getElementById('picker-list');
-  if(!list)return;
-  const filtered=all.filter(e=>{
-    const search=document.getElementById('picker-search')?.value.toLowerCase()||'';
-    const muscle=val&&!['Todos',''].includes(val)?val:'';
-    return (!muscle||e.muscles.includes(muscle))&&(!search||e.name.toLowerCase().includes(search));
-  });
-  list.innerHTML=filtered.map(ex=>`
-    <div class="ex-item" style="cursor:pointer" onclick="pickEx('${ex.name.replace(/'/g,"\\'")}','${ex.pattern}',${JSON.stringify(ex.muscles)})">
-      <div class="ex-item-body">
-        <div class="ex-item-name">${ex.name}</div>
-        <div class="ex-item-sub">${ex.muscles.join(', ')} · ${ex.pattern}</div>
-      </div>
-      <span style="color:var(--accent);font-size:20px">+</span>
-    </div>
-  `).join('');
-  // update pills
-  document.querySelectorAll('#picker-pills .pill').forEach(p=>{
-    p.classList.toggle('on',p.textContent.trim()===(val||'Todos'));
-  });
-}
-
-function pickEx(name,pattern,muscles){
+function pickExByIdx(i){
+  const ex=_pickerList[i];
+  if(!ex)return;
   const routines=getRoutines();
   const r=routines.find(x=>x.id===builderRoutineId);
   if(!r)return;
-  const ex=getAllExercises().find(e=>e.name===name);
   r.exercises.push({
-    name,pattern,muscles,
-    sets:3,reps:'10-12',rest:90,note:'',
-    url:ex?.url||''
+    name:ex.name,pattern:ex.pattern,muscles:ex.muscles,
+    sets:3,reps:'10-12',rest:90,note:'',url:ex.url||''
   });
   saveRoutines(routines);
   editRoutine(builderRoutineId);
+}
+
+function filterPicker(val){
+  _pickerList=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
+  const search=document.getElementById('picker-search')?.value.toLowerCase()||'';
+  const muscle=val&&val!=='Todos'?val:'';
+  const filtered=_pickerList.filter((e,i)=>{
+    const matchM=!muscle||e.muscles.includes(muscle);
+    const matchS=!search||e.name.toLowerCase().includes(search);
+    return matchM&&matchS;
+  });
+  // remap indices to original _pickerList
+  const list=document.getElementById('picker-list');
+  if(!list)return;
+  list.innerHTML=filtered.map(ex=>{
+    const i=_pickerList.indexOf(ex);
+    return`
+      <div class="ex-item" style="cursor:pointer" onclick="pickExByIdx(${i})">
+        <div class="ex-item-body">
+          <div class="ex-item-name">${ex.name}</div>
+          <div class="ex-item-sub">${ex.muscles.join(', ')} · ${ex.pattern}</div>
+        </div>
+        <span style="color:var(--accent);font-size:20px">+</span>
+      </div>
+    `;
+  }).join('');
+  document.querySelectorAll('#picker-pills .pill').forEach(p=>{
+    p.classList.toggle('on',p.textContent.trim()===(val||'Todos'));
+  });
 }
 
 function saveBuilder(){
