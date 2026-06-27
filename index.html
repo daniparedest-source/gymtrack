@@ -355,12 +355,46 @@ const DEFAULT_ROUTINES = [
 function load(k,d=null){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}}
 function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 
-function getSessions(){return load('gt_sessions',[])}
-function saveSession(s){const a=getSessions();a.unshift(s);save('gt_sessions',a)}
+function getSessions(){
+  const raw=load('gt_sessions',[]);
+  if(!Array.isArray(raw))return [];
+  // sanitize each session so missing fields never crash renders
+  return raw.filter(s=>s&&typeof s==='object').map(s=>({
+    routineId:s.routineId||'',
+    routineName:s.routineName||s.routineId||'Rutina',
+    date:s.date||new Date().toISOString(),
+    duration:s.duration||0,
+    totalSets:s.totalSets||0,
+    exercises:Array.isArray(s.exercises)?s.exercises.filter(e=>e&&typeof e==='object').map(e=>({
+      name:e.name||'Ejercicio',
+      pattern:e.pattern||'',
+      unit:e.unit||'kg',
+      sets:Array.isArray(e.sets)?e.sets:[]
+    })):[]
+  }));
+}
+function saveSession(s){const a=load('gt_sessions',[]);const arr=Array.isArray(a)?a:[];arr.unshift(s);save('gt_sessions',arr)}
 function getRoutines(){
   const saved=load('gt_routines',null);
-  if(!saved)return JSON.parse(JSON.stringify(DEFAULT_ROUTINES));
-  return saved;
+  if(!saved||!Array.isArray(saved)||!saved.length)return JSON.parse(JSON.stringify(DEFAULT_ROUTINES));
+  // sanitize each routine
+  return saved.filter(r=>r&&typeof r==='object').map(r=>({
+    id:r.id||('R'+Math.random().toString(36).slice(2)),
+    name:r.name||'Rutina',
+    subtitle:r.subtitle||'',
+    color:r.color||'',
+    exercises:Array.isArray(r.exercises)?r.exercises.filter(e=>e&&typeof e==='object').map(e=>({
+      name:e.name||'Ejercicio',
+      pattern:e.pattern||'',
+      muscles:Array.isArray(e.muscles)?e.muscles:[],
+      sets:(typeof e.sets==='number')?e.sets:(Array.isArray(e.sets)?e.sets.length:(parseInt(e.sets)||3)),
+      reps:e.reps||'10-12',
+      rest:typeof e.rest==='number'?e.rest:(parseInt(e.rest)||90),
+      rir:e.rir||'',
+      note:e.note||'',
+      url:e.url||''
+    })):[]
+  }));
 }
 function saveRoutines(r){save('gt_routines',r)}
 function getCustomExercises(){return load('gt_custom_ex',[])}
@@ -481,7 +515,7 @@ function renderHome(){
               <span class="tag">${last.duration||'?'} min</span>
             </div>
             <div class="flex gap-6" style="flex-wrap:wrap">
-              ${last.exercises.map(e=>`<span class="tag">${e.name.split(' ').slice(0,2).join(' ')}</span>`).join('')}
+              ${(last.exercises||[]).map(e=>`<span class="tag">${(e.name||'Ejercicio').split(' ').slice(0,2).join(' ')}</span>`).join('')}
             </div>
           </div>
         </div>
@@ -1700,6 +1734,14 @@ function parseRest(str){
 function fmtTimer(ms){
   const s=Math.floor(ms/1000),m=Math.floor(s/60),sec=s%60;
   return `${m}:${sec.toString().padStart(2,'0')}`;
+}
+function fmtDate(iso){
+  try{return new Date(iso).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'});}
+  catch{return '—';}
+}
+function fmtDateShort(iso){
+  try{return new Date(iso).toLocaleDateString('es-MX',{day:'numeric',month:'short'});}
+  catch{return '—';}
 }
 
 // ═══════════════════════════════════════════
