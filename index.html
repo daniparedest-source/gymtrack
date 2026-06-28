@@ -472,12 +472,16 @@ function renderHome(){
 
   const draft=load('gt_draft',null);
   const last=sessions[0];
+  const userName=load('gt_username','Daniel');
   const routines=getRoutines();
   document.getElementById('sc-home').innerHTML=`
     <div class="fade-up">
-      <div style="margin-bottom:20px">
-        <div class="h1">HOLA,<br><span>DANIEL</span> 👊</div>
-        <div class="caption" style="margin-top:4px" id="home-subtitle">${trainedToday.length?'Ya entrenaste hoy 🔥':'Elige una rutina para comenzar'}</div>
+      <div style="margin-bottom:20px;display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <div class="h1">HOLA,<br><span>${userName.toUpperCase()}</span> 👊</div>
+          <div class="caption" style="margin-top:4px" id="home-subtitle">${trainedToday.length?'Ya entrenaste hoy 🔥':'Elige una rutina para comenzar'}</div>
+        </div>
+        <button class="btn-icon" style="margin-top:8px;flex-shrink:0" onclick="editUserName()" title="Cambiar nombre">✏️</button>
       </div>
 
       ${draft&&draft.session?`
@@ -1852,6 +1856,29 @@ function deleteRoutine(id){
   saveRoutines(routines);
   closeModal();
   renderRoutines();
+}
+
+// ═══════════════════════════════════════════
+// USER NAME
+// ═══════════════════════════════════════════
+function editUserName(){
+  const current=load('gt_username','Daniel');
+  openModal('✏️ Cambiar nombre',`
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="caption">Este nombre aparece en el saludo de la pantalla de inicio.</div>
+      <input class="input" id="username-input" value="${current}" maxlength="20" placeholder="Tu nombre"/>
+      <button class="btn btn-primary" onclick="saveUserName()">Guardar</button>
+    </div>
+  `);
+  setTimeout(()=>document.getElementById('username-input')?.focus(),100);
+}
+
+function saveUserName(){
+  const val=document.getElementById('username-input')?.value.trim();
+  if(!val)return;
+  save('gt_username',val);
+  closeModal();
+  renderHome();
 }
 
 // ═══════════════════════════════════════════
