@@ -470,15 +470,28 @@ function renderHome(){
   }
   const weeks=sessions.length?Math.max(1,Math.ceil((Date.now()-new Date(sessions[sessions.length-1].date))/(7*864e5))):0;
 
+  const draft=load('gt_draft',null);
   const last=sessions[0];
   const routines=getRoutines();
-
   document.getElementById('sc-home').innerHTML=`
     <div class="fade-up">
       <div style="margin-bottom:20px">
         <div class="h1">HOLA,<br><span>DANIEL</span> 👊</div>
-        <div class="caption" style="margin-top:4px">${trainedToday.length?'Ya entrenaste hoy 🔥':'Elige una rutina para comenzar'}</div>
+        <div class="caption" style="margin-top:4px" id="home-subtitle">${trainedToday.length?'Ya entrenaste hoy 🔥':'Elige una rutina para comenzar'}</div>
       </div>
+
+      ${draft&&draft.session?`
+        <div style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);border-radius:var(--r);padding:14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div>
+            <div class="font-bold" style="color:var(--warn);font-size:13px">📝 Borrador guardado</div>
+            <div class="caption">${draft.session.routineName} · ${fmtTimer(draft.elapsed||0)} registrado</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="resumeDraft()">Retomar</button>
+            <button class="btn btn-icon" onclick="discardDraft()" style="color:var(--danger)">✕</button>
+          </div>
+        </div>
+      `:''}
 
       <div class="stats-grid">
         <div class="stat"><div class="stat-val">${sessions.length}</div><div class="stat-lbl">Sesiones</div></div>
@@ -587,6 +600,10 @@ function startWorkout(routineId){
     const el=document.getElementById('session-elapsed');
     if(el)el.textContent=fmtTimer(Date.now()-sessionStart);
   },1000);
+  // auto-save draft every 30 seconds as backup
+  if(window._draftTick)clearInterval(window._draftTick);
+  window._draftTick=setInterval(autoSaveDraft,30000);
+  autoSaveDraft(); // save immediately on start
   nav('workout');
 }
 
@@ -685,7 +702,8 @@ function renderWorkout(){
 
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
         <button class="btn btn-primary" onclick="finishWorkout()">✅ Finalizar Sesión</button>
-        <button class="btn btn-danger" onclick="cancelWorkout()">Cancelar</button>
+        <button class="btn btn-ghost" onclick="saveDraft()">📝 Guardar borrador y salir</button>
+        <button class="btn btn-danger" onclick="cancelWorkout()">Descartar sesión</button>
       </div>
     </div>
   `;
@@ -696,9 +714,15 @@ function getExUrl(name){
   return ex?ex.url:'';
 }
 
+function autoSaveDraft(){
+  if(!activeSession||!sessionStart)return;
+  save('gt_draft',{session:activeSession,elapsed:Date.now()-sessionStart});
+}
+
 function setVal(ei,si,field,val){
   if(!activeSession)return;
   activeSession.exercises[ei].sets[si][field]=val;
+  autoSaveDraft();
 }
 
 function toggleUnit(ei){
@@ -722,11 +746,21 @@ function toggleDone(ei,si){
   if(kgEl)kgEl.classList.toggle('done',set.done);
   if(rpEl)rpEl.classList.toggle('done',set.done);
   if(set.done)startRest(activeSession.exercises[ei].rest);
+  autoSaveDraft();
 }
 
 function finishWorkout(){
   if(!activeSession)return;
   clearInterval(sessionTick);
+  // collect any unsaved input values before finishing
+  activeSession.exercises.forEach((ex,ei)=>{
+    ex.sets.forEach((set,si)=>{
+      const kgEl=document.getElementById(`kg-${ei}-${si}`);
+      const rpEl=document.getElementById(`rp-${ei}-${si}`);
+      if(kgEl)set.kg=kgEl.value;
+      if(rpEl)set.reps=rpEl.value;
+    });
+  });
   const dur=Math.round((Date.now()-sessionStart)/60000);
   const sess={
     routineId:activeSession.routineId,
@@ -742,16 +776,206 @@ function finishWorkout(){
     }))
   };
   saveSession(sess);
+  // clear draft and interval
+  save('gt_draft',null);
+  if(window._draftTick){clearInterval(window._draftTick);window._draftTick=null;}
   activeSession=null;
   sessionStart=null;
   nav('home');
 }
 
+function saveDraft(){
+  if(!activeSession)return;
+  // collect current input values
+  activeSession.exercises.forEach((ex,ei)=>{
+    ex.sets.forEach((set,si)=>{
+      const kgEl=document.getElementById(`kg-${ei}-${si}`);
+      const rpEl=document.getElementById(`rp-${ei}-${si}`);
+      if(kgEl)set.kg=kgEl.value;
+      if(rpEl)set.reps=rpEl.value;
+    });
+  });
+  save('gt_draft',{session:activeSession,elapsed:Date.now()-sessionStart});
+  nav('home');
+  // show confirmation
+  const sub=document.getElementById('home-subtitle');
+  if(sub){sub.textContent='📝 Sesión guardada como borrador';sub.style.color='var(--warn)';setTimeout(()=>{sub.textContent='Elige una rutina para comenzar';sub.style.color='';},3000);}
+}
+
+function resumeDraft(){
+  const draft=load('gt_draft',null);
+  if(!draft||!draft.session)return;
+  activeSession=draft.session;
+  sessionStart=Date.now()-(draft.elapsed||0);
+  if(sessionTick)clearInterval(sessionTick);
+  sessionTick=setInterval(()=>{
+    const el=document.getElementById('session-elapsed');
+    if(el)el.textContent=fmtTimer(Date.now()-sessionStart);
+  },1000);
+  save('gt_draft',null);
+  nav('workout');
+}
+
+function discardDraft(){
+  if(!confirm('¿Descartar el borrador?'))return;
+  save('gt_draft',null);
+  renderHome();
+}
+
 function cancelWorkout(){
-  if(!confirm('¿Cancelar sesión? No se guardará.'))return;
+  openModal('¿Qué quieres hacer?',`
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-ghost" onclick="saveDraft();closeModal()">📝 Guardar como borrador</button>
+      <button class="btn btn-danger" onclick="closeModal();_cancelConfirmed()">🗑 Descartar sesión</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Volver al entrenamiento</button>
+    </div>
+  `);
+}
+function _cancelConfirmed(){
   clearInterval(sessionTick);
+  if(window._draftTick){clearInterval(window._draftTick);window._draftTick=null;}
+  save('gt_draft',null);
   activeSession=null;
   nav('routines');
+}
+
+// ── EDIT PAST SESSION ──
+function openEditSession(idx){
+  const sessions=getSessions();
+  const s=sessions[idx];
+  if(!s)return;
+  openModal(`✏️ Editar sesión`,editSessionHTML(s,idx));
+}
+
+function editSessionHTML(s,idx){
+  const allEx=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
+  return`
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="caption" style="color:var(--dim)">${fmtDate(s.date)} · ${s.routineName}</div>
+
+      <div id="edit-session-exercises">
+        ${s.exercises.map((ex,ei)=>editExHTML(ex,ei,idx)).join('')}
+      </div>
+
+      <button class="btn btn-ghost" onclick="openAddExToSession(${idx})">＋ Agregar ejercicio</button>
+      <button class="btn btn-primary" onclick="saveEditedSession(${idx})">💾 Guardar cambios</button>
+    </div>
+  `;
+}
+
+function editExHTML(ex,ei,sessionIdx){
+  return`
+    <div class="card-sm" id="edit-ex-${ei}">
+      <div class="row-sb" style="margin-bottom:8px">
+        <div class="font-bold" style="font-size:13px">${ex.name}</div>
+        <button class="btn-icon" style="width:26px;height:26px;font-size:12px" onclick="removeExFromSession(${sessionIdx},${ei})">✕</button>
+      </div>
+      ${(ex.sets||[]).map((set,si)=>`
+        <div style="display:grid;grid-template-columns:24px 1fr 1fr 28px;gap:6px;align-items:center;margin-bottom:6px">
+          <div class="series-num" style="font-size:16px">${si+1}</div>
+          <input class="input input-sm" type="number" inputmode="decimal"
+            placeholder="${ex.unit||'kg'}" value="${set.kg||''}"
+            onchange="updateEditSet(${sessionIdx},${ei},${si},'kg',this.value)"/>
+          <input class="input input-sm" type="number" inputmode="numeric"
+            placeholder="reps" value="${set.reps||''}"
+            onchange="updateEditSet(${sessionIdx},${ei},${si},'reps',this.value)"/>
+          <button class="btn-icon" style="width:26px;height:26px;font-size:11px"
+            onclick="removeSetFromSession(${sessionIdx},${ei},${si})">✕</button>
+        </div>
+      `).join('')}
+      <button class="btn btn-ghost btn-sm" style="font-size:11px;margin-top:4px"
+        onclick="addSetToSession(${sessionIdx},${ei})">＋ Serie</button>
+    </div>
+  `;
+}
+
+function updateEditSet(sessionIdx,ei,si,field,val){
+  const sessions=load('gt_sessions',[]);
+  if(sessions[sessionIdx]&&sessions[sessionIdx].exercises[ei]&&sessions[sessionIdx].exercises[ei].sets[si]){
+    sessions[sessionIdx].exercises[ei].sets[si][field]=val;
+    save('gt_sessions',sessions);
+  }
+}
+
+function addSetToSession(sessionIdx,ei){
+  const sessions=load('gt_sessions',[]);
+  if(!sessions[sessionIdx])return;
+  sessions[sessionIdx].exercises[ei].sets.push({kg:'',reps:'',done:false});
+  sessions[sessionIdx].totalSets=(sessions[sessionIdx].exercises||[]).reduce((a,e)=>a+(e.sets||[]).length,0);
+  save('gt_sessions',sessions);
+  const el=document.getElementById('edit-session-exercises');
+  if(el)el.innerHTML=sessions[sessionIdx].exercises.map((ex,i)=>editExHTML(ex,i,sessionIdx)).join('');
+}
+
+function removeSetFromSession(sessionIdx,ei,si){
+  const sessions=load('gt_sessions',[]);
+  if(!sessions[sessionIdx])return;
+  sessions[sessionIdx].exercises[ei].sets.splice(si,1);
+  sessions[sessionIdx].totalSets=(sessions[sessionIdx].exercises||[]).reduce((a,e)=>a+(e.sets||[]).length,0);
+  save('gt_sessions',sessions);
+  const el=document.getElementById('edit-session-exercises');
+  if(el)el.innerHTML=sessions[sessionIdx].exercises.map((ex,i)=>editExHTML(ex,i,sessionIdx)).join('');
+}
+
+function removeExFromSession(sessionIdx,ei){
+  const sessions=load('gt_sessions',[]);
+  if(!sessions[sessionIdx])return;
+  sessions[sessionIdx].exercises.splice(ei,1);
+  sessions[sessionIdx].totalSets=(sessions[sessionIdx].exercises||[]).reduce((a,e)=>a+(e.sets||[]).length,0);
+  save('gt_sessions',sessions);
+  const el=document.getElementById('edit-session-exercises');
+  if(el)el.innerHTML=sessions[sessionIdx].exercises.map((ex,i)=>editExHTML(ex,i,sessionIdx)).join('');
+}
+
+function openAddExToSession(sessionIdx){
+  _editSessionIdx=sessionIdx;
+  _pickerList=getAllExercises().sort((a,b)=>a.name.localeCompare(b.name));
+  _pickerCurrentMuscle='';
+  const muscles=[...new Set(_pickerList.flatMap(e=>e.muscles))].sort();
+  openModal('Agregar ejercicio',`
+    <div class="search-wrap" style="margin-bottom:8px">
+      <span class="search-icon">🔍</span>
+      <input class="input" id="picker-search" placeholder="Buscar..." oninput="filterPicker()"/>
+    </div>
+    <div class="pill-scroll" id="picker-pills">
+      <div class="pill on" onclick="filterPicker('')">Todos</div>
+      ${muscles.map(m=>`<div class="pill" onclick="filterPicker('${m}')">${m}</div>`).join('')}
+    </div>
+    <div id="picker-list" style="max-height:45vh;overflow-y:auto">
+      ${_pickerList.map((ex,i)=>`
+        <div class="ex-item" style="cursor:pointer" onclick="pickExForSession(${i})">
+          <div class="ex-item-body">
+            <div class="ex-item-name">${ex.name}</div>
+            <div class="ex-item-sub">${ex.muscles.join(', ')} · ${ex.pattern}</div>
+          </div>
+          <span style="color:var(--accent);font-size:20px">+</span>
+        </div>
+      `).join('')}
+    </div>
+  `);
+}
+
+let _editSessionIdx=null;
+
+function pickExForSession(i){
+  const ex=_pickerList[i];
+  if(!ex||_editSessionIdx===null)return;
+  const sessions=load('gt_sessions',[]);
+  if(!sessions[_editSessionIdx])return;
+  sessions[_editSessionIdx].exercises.push({
+    name:ex.name,
+    pattern:ex.pattern,
+    unit:'kg',
+    sets:[{kg:'',reps:'',done:false},{kg:'',reps:'',done:false},{kg:'',reps:'',done:false}]
+  });
+  sessions[_editSessionIdx].totalSets=(sessions[_editSessionIdx].exercises||[]).reduce((a,e)=>a+(e.sets||[]).length,0);
+  save('gt_sessions',sessions);
+  openEditSession(_editSessionIdx);
+}
+
+function saveEditedSession(idx){
+  closeModal();
+  renderHistory();
 }
 
 // ═══════════════════════════════════════════
@@ -855,8 +1079,9 @@ function renderHistory(){
               </div>
             </div>
           `).join('')}
-          <div style="padding:12px 16px">
-            <button class="btn btn-danger btn-sm" onclick="deleteSession(${i})">Eliminar sesión</button>
+          <div style="padding:12px 16px;display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="openEditSession(${i})">✏️ Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteSession(${i})">Eliminar</button>
           </div>
         </div>
       </div>
